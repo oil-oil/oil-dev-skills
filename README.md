@@ -62,7 +62,7 @@ npx skills add oil-oil/oil-dev-skills --skill oil-code-review
 
 - `oil-explore`、`oil-plan`、`oil-code-review`、`oil-govern` 的脚本只读取 Git 和文件结构，不需要 API Key，也不限定编程语言。
 - `oil-delegate` 第一次使用时，会自动找出本机已安装的 CLI Agent，问你要启用哪些。
-- 代码审查、方案挑刺这类用途交给谁，第一次用到时问你一次就记住了，之后也可以直接说“以后 review 都交给 codex”。这些偏好只保存在本机，不写进项目。
+- 代码审查、方案挑刺这类用途交给谁，第一次用到时问你一次就记住了，之后也可以直接说“以后 review 都交给 codex”。这些偏好保存在本机 oil-delegate 自己的配置里，不写进项目。
 - 如果之前单独装过 [oil-delegate](https://github.com/oil-oil/oil-delegate)，装整套后只保留一份，避免出现两个同名 Skill。
 
 ## 怎么用
@@ -107,6 +107,35 @@ npx skills add oil-oil/oil-dev-skills --skill oil-code-review
 写好之后，几个 Skill 会直接读取它：`oil-explore` 不用再猜测试命令，`oil-plan` 把快测和门禁写进派发契约，`oil-code-review` 像上面的例子那样标出高风险和禁改的文件。没有这一节时，各 Skill 按内置的默认规则判断。
 
 不想手写的话，对 Agent 说“用 oil-govern 帮我生成开发约定”。格式和生成步骤见 [dev-profile.md](skills/oil-govern/references/dev-profile.md)。
+
+## 个人偏好
+
+只跟你自己有关的设置，写在本机的 `~/.oil-dev/preferences.md`。整个系列共用这一个文件，每个 Skill 一节，用自然语言写；紧跟在 Skill 标题下的文字对所有宿主生效，`### 宿主名` 下面的只对那个宿主生效。它不进项目仓库，团队共享的约定仍然写在上面的开发约定里。
+
+目前 `oil-explore` 会在需要并行探索时读取它。你可以写清楚在不同宿主里怎么派发探索子 Agent：用哪种机制、什么模型、最多派几个、结束后怎么回收。
+
+```markdown
+## oil-explore
+
+探索子 Agent 最多 3 个。
+
+### antigravity
+
+- 用 swarm 派发探索子 Agent，每个 Worker 用 `<模型 ID>`。
+- 收齐所有简报后结束 Worker。
+
+### claude-code
+
+- 用 Explore 子 Agent，模型 haiku。
+```
+
+可以直接打开文件改，也可以告诉 Agent，由它整理后保存：
+
+```text
+以后在 Claude Code 里用 oil-explore，探索子 Agent 用 haiku，最多派 3 个。
+```
+
+没有写的部分按默认做法：选轻量快速的模型，派 2–3 个。`oil-delegate` 的偏好（启用哪些 CLI Agent、各用途交给谁）保存在它自己的配置里，不在这个文件中。
 
 ## 权限与适用边界
 
