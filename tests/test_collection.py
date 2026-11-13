@@ -16,6 +16,7 @@ EXPECTED_SKILLS = {
     "oil-delegate",
     "oil-code-review",
     "oil-govern",
+    "oil-bug-fix",
 }
 MD_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
