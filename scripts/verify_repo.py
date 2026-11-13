@@ -20,12 +20,14 @@ EXPECTED_SKILLS = (
     "oil-delegate",
     "oil-code-review",
     "oil-govern",
+    "oil-bug-fix",
 )
 UNIVERSAL_SKILLS = {
     "oil-explore",
     "oil-plan",
     "oil-code-review",
     "oil-govern",
+    "oil-bug-fix",
 }
 
 

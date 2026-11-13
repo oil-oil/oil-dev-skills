@@ -1,9 +1,9 @@
 ---
 name: oil-govern
-description: "对长期迭代项目执行文档与规范治理（单源同步 @AGENTS.md、常驻规范减负、过期架构描述与过程快照清理）、测试治理（快测与重测分层防 AI 频繁空跑耗时测试、排查孤儿测试与慢单测、清理无效测试并保障无副作用隔离）、并行 Git Worktree 卫生盘点，以及将项目硬规则落地为仓库内确定性静态检查。用户要求体检或整理项目文档与 AGENTS.md、给测试做快慢分层、清理冗余测试或闲置 Worktree、把规范写成自动检查，或对顽固边缘问题做止损会诊时使用；不用于单次功能的方案撰写（交给 oil-plan）或单次改动的 Code Review（交给 oil-code-review）。"
+description: "对长期迭代项目执行文档与规范治理（单源同步 @AGENTS.md、常驻规范减负、过期架构描述与过程快照清理）、测试治理（快测与重测分层防 AI 频繁空跑耗时测试、排查孤儿测试与慢单测、清理无效测试并保障无副作用隔离）、并行 Git Worktree 卫生盘点，以及将项目硬规则落地为仓库内确定性静态检查。用户要求体检或整理项目文档与 AGENTS.md、给测试做快慢分层、清理冗余测试或闲置 Worktree，或把规范写成自动检查时使用；不用于单次功能的方案撰写（交给 oil-plan）、单次改动的 Code Review（交给 oil-code-review）或单个缺陷的排查与止损（交给 oil-bug-fix）。"
 license: MIT
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # oil-govern
@@ -24,7 +24,7 @@ metadata:
 | 全仓体检 | 阶段性维护，快速盘点文档、测试与 Worktree 现状 | `AUDIT_REPO --scope all` → 定向抽查热点文件 → 输出分级整改清单 | 呈现客观问题清单请用户勾选 |
 | 文档与规范治理 | 同步入口规则、清理过期描述/死链、归档过程快照、建立或校准开发约定 | `AUDIT_REPO --scope docs` → 对照近期活跃代码核查核心文档 → 更新瘦身 | 常驻文档准确清爽、零死链且开发约定可用 |
 | 测试分层与瘦身 | AI 跑测试太频繁太慢、存在孤儿/无效测试或漏测盲区 | `AUDIT_REPO --scope tests` → 拆分快慢入口 + 写控频规则 + 清理慢/假测试 | 跑通快测入口并确认重测分层 |
-| Worktree / 脚本化 / 止损 | 清理并行工作树、把文字规矩写成项目内静态检查、或止损顽固难题 | 盘点 Worktree / 编写项目内检查测试 / 按三步止损法双模型会诊 | 完成清理、接入检查或给出止损建议 |
+| Worktree / 脚本化 | 清理并行工作树、把文字规矩写成项目内静态检查 | 盘点 Worktree / 编写项目内检查测试 | 完成清理或接入检查 |
 
 ## 工作流
 
@@ -53,7 +53,7 @@ AUDIT_REPO --workspace "<项目路径>" --scope all
 2. **排查孤儿测试与慢单测混入**：以快照里的 `ci_run_steps`（CI 实际执行的命令）和已定义脚本为准，逐个核对测试目录是否真被某条命令执行到，没被任何入口覆盖的就是孤儿测试候选；快照提示“未发现 CI 配置”时，如实说明无法客观确认，只能对照本地测试入口判断。若有耗时几十秒的重计算用例混在普通单测层，提议抽离或优化。
 3. **清理无效测试并守住隔离底线**：清理零业务断言、重度 mock 自证或硬写长 `sleep` 的低价值测试；确认客户端/桌面测试全程无头运行、不弹窗抢焦点、不污染用户真实配置域。
 
-### 4. Worktree 卫生、项目内脚本化与疑难止损
+### 4. Worktree 卫生与项目内脚本化
 
 - **并行 Worktree 与分支清理**：若快照显示子 Worktree 直接嵌套在主仓库目录内，建议移至同级父目录或加入忽略规则。按快照里的合入状态区别对待：
   - 标为“可清理候选”的（普通合并、squash 或 rebase 合入，且没有未提交改动）：提示直接切新分支复用其热编译缓存，或移除回收空间。
@@ -62,7 +62,7 @@ AUDIT_REPO --workspace "<项目路径>" --scope all
   - “远端分支已删除”只是辅助信号，不能单独作为清理依据。
   - 执行 `git worktree remove` 或删除分支前，列出清单并征得用户确认。
 - **项目硬规则转静态测试**：阅读 `AGENTS.md` / `DESIGN.md` 中的明确禁令（如分层禁引、禁用控件样式、单文件行数阈值、打包资源规范），在**目标仓库的测试套或 `scripts/`** 中编写简洁易读的静态检查。
-- **顽固边缘问题三步止损**：遇到连修两轮仍卡死、越改越乱，或 `oil-code-review` 中同一条 `Must Fix` 两轮仍未通过的难题，按 [三步止损法](references/governance-guide.md#4-疑难问题与复杂边缘需求的三步止损法) 执行用户对齐、双独立强模型只读会诊与果断做减法。
+- **单个顽固缺陷不在这里处理**：连修两轮仍卡住的缺陷，交给 `oil-bug-fix` 的止损步骤。`oil-bug-fix` 提议把某类普遍问题写成自动检查、用户同意后，由本 Skill 编写。
 
 ## 输出与后续衔接
 
@@ -71,11 +71,10 @@ AUDIT_REPO --workspace "<项目路径>" --scope all
 | 下游意图 | 衔接动作 |
 | --- | --- |
 | 将某条硬规矩落地为目标仓库内的静态测试后清理旧审查项 | 配合 `oil-code-review` 删掉重复的人工审查规则 |
-| 对修了两轮仍卡住的疑难故障做双模型盲诊 | 用 `oil-delegate` 的 `--role diagnose`，分别以 `--role-slot 1` 和 `--role-slot 2` 派发两路独立分析（自动只读；某一路返回 `USE_HOST` 时由当前 Agent 的全新子 Agent 承担；返回 `NEEDS_ROLE_CHOICE` 时问用户一次要哪两个），回来后确认 `git status` 没有变化 |
 
 ## 资源导航
 
-- [references/governance-guide.md](references/governance-guide.md)：包含常驻文档分层保鲜、快慢测试分层控频、Worktree 热缓存复用、项目内静态检查落地与三步止损法。
+- [references/governance-guide.md](references/governance-guide.md)：包含常驻文档分层保鲜、快慢测试分层控频、Worktree 热缓存复用与项目内静态检查落地。
 - [references/dev-profile.md](references/dev-profile.md)：建立或校准 `AGENTS.md` 中 `oil-dev` 开发约定时阅读，含格式、各 Skill 的用法与生成步骤。
 - [scripts/audit_repo.py](scripts/audit_repo.py)：零第三方依赖、零生硬语义正则的文档死链与新鲜度、Git 演进温差、大文件、CI 命令与 Worktree 合入状态采集脚本。
 - [tests/test_audit_repo.py](tests/test_audit_repo.py)：`audit_repo.py` 的回归测试，仅在修改脚本时运行。
