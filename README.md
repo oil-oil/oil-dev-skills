@@ -1,3 +1,5 @@
+English · [中文](README.zh-CN.md)
+
 <p align="center">
   <img src="./assets/readme/hero.svg" width="100%" alt="oil-dev-skills: a development workflow for AI coding agents. Explore and plan on main; delegate implementation and run independent code review in a worktree; pass the merge gate back to main, then govern. After exploration, a separate bug-fix branch finds the root cause before fixing and merges back to main.">
 </p>

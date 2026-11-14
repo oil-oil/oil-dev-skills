@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="580" viewBox="0 0 1200 580" role="img" aria-labelledby="title desc">
+  <title id="title">审查前，改动会先和项目约定、已确认方案对一遍</title>
+  <desc id="desc">左边是示例仓库 AGENTS.md 里的开发约定（快测、门禁、高风险目录 src/storage/、禁改目录 vendor/）和已确认方案允许改动的范围（src/export/** 与 tests/**）。右边是 oil-code-review 的 review_helper.py 在这个示例仓库上的实际输出节选：src/storage/project_file.py 落在高风险目录，按独立深审处理；vendor/ffmpeg/wrap.py 落在禁改目录，必须确认是否允许修改；另有 3 个文件超出方案允许范围。三条连线把每条规则和它标出的文件对应起来。</desc>
+
+  <rect width="1200" height="580" rx="28" fill="#F5F3EE"/>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif">
+    <text x="64" y="58" fill="#6C7380" font-size="16" font-weight="700" letter-spacing="2.4">REAL OUTPUT</text>
+    <text x="226" y="58" fill="#8A909A" font-size="16">示例仓库上的一次实际运行，节选并换行排版</text>
+  </g>
+
+  <g id="inputs" transform="translate(0 30)">
+    <!-- AGENTS.md dev profile -->
+    <rect x="64" y="56" width="416" height="246" rx="16" fill="#FFFFFF" stroke="#E2DED5" stroke-width="1.5"/>
+    <text x="92" y="98" fill="#8A909A" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18">AGENTS.md</text>
+    <text x="452" y="98" text-anchor="end" fill="#172033" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="18" font-weight="650">开发约定（oil-dev）</text>
+    <path d="M92 116 H452" stroke="#ECE8E0" stroke-width="1.5"/>
+    <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="20" fill="#566174">
+      <text x="92" y="158">快测</text>
+      <text x="92" y="196">门禁</text>
+      <text x="92" y="234">高风险</text>
+      <text x="92" y="272">禁改</text>
+    </g>
+    <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="20" fill="#172033">
+      <text x="166" y="158">pytest tests/{target} -q</text>
+      <text x="166" y="196">make ci</text>
+      <text x="166" y="234">src/storage/</text>
+      <text x="166" y="272">vendor/</text>
+    </g>
+    <rect x="78" y="216" width="4" height="24" rx="2" fill="#D9822B"/>
+    <rect x="78" y="254" width="4" height="24" rx="2" fill="#D2483C"/>
+
+    <!-- confirmed plan scope -->
+    <rect x="64" y="326" width="416" height="166" rx="16" fill="#FFFFFF" stroke="#E2DED5" stroke-width="1.5"/>
+    <text x="92" y="368" fill="#8A909A" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="18">已确认的方案</text>
+    <text x="452" y="368" text-anchor="end" fill="#172033" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="18" font-weight="650">允许改动</text>
+    <path d="M92 386 H452" stroke="#ECE8E0" stroke-width="1.5"/>
+    <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="20" fill="#172033">
+      <text x="92" y="428">src/export/**</text>
+      <text x="92" y="466">tests/**</text>
+    </g>
+    <rect x="78" y="410" width="4" height="62" rx="2" fill="#4D6BFE"/>
+  </g>
+
+  <g id="links" transform="translate(0 30)" fill="none" stroke-width="2.5" stroke-linecap="round">
+    <path d="M480 228 C524 228 520 142 564 142" stroke="#D9822B"/>
+    <path d="M480 266 C524 266 520 246 564 246" stroke="#D2483C"/>
+    <path d="M480 440 C524 440 520 350 564 350" stroke="#4D6BFE"/>
+    <circle cx="480" cy="228" r="5" fill="#D9822B" stroke="none"/>
+    <circle cx="480" cy="266" r="5" fill="#D2483C" stroke="none"/>
+    <circle cx="480" cy="440" r="5" fill="#4D6BFE" stroke="none"/>
+  </g>
+
+  <g id="output" transform="translate(0 30)">
+    <rect x="564" y="56" width="572" height="456" rx="16" fill="#172033"/>
+    <text x="596" y="98" fill="#9AA3B5" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18">review_helper.py</text>
+    <text x="1108" y="98" text-anchor="end" fill="#E8EAF0" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="18" font-weight="650">待审改动清单 · 5 个文件</text>
+    <path d="M596 116 H1108" stroke="#2C3650" stroke-width="1.5"/>
+
+    <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="20">
+      <rect x="590" y="126" width="132" height="32" rx="7" fill="none" stroke="#F2A65A" stroke-width="1.5"/>
+      <text x="656" y="149" text-anchor="middle" fill="#F2A65A" font-weight="650">高风险目录</text>
+      <text x="738" y="149" fill="#C3C9D6">按独立深审处理</text>
+
+      <rect x="590" y="230" width="112" height="32" rx="7" fill="none" stroke="#FF8A7A" stroke-width="1.5"/>
+      <text x="646" y="253" text-anchor="middle" fill="#FF8A7A" font-weight="650">禁改目录</text>
+      <text x="718" y="253" fill="#C3C9D6">必须确认是否允许修改</text>
+
+      <rect x="590" y="334" width="192" height="32" rx="7" fill="none" stroke="#8FA4FF" stroke-width="1.5"/>
+      <text x="686" y="357" text-anchor="middle" fill="#8FA4FF" font-weight="650">超出方案允许范围</text>
+      <text x="798" y="357" fill="#C3C9D6">3 个文件</text>
+    </g>
+
+    <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="20" fill="#E8EAF0">
+      <text x="614" y="196">src/storage/project_file.py</text>
+      <text x="614" y="300">vendor/ffmpeg/wrap.py</text>
+      <text x="614" y="404">src/storage/project_file.py</text>
+      <text x="614" y="440">src/ui/toolbar.py</text>
+      <text x="614" y="476">vendor/ffmpeg/wrap.py</text>
+    </g>
+  </g>
+</svg>
