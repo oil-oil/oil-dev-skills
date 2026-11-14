@@ -1,9 +1,9 @@
 ---
 name: oil-govern
-description: "对长期迭代项目执行文档与规范治理（单源同步 @AGENTS.md、常驻规范减负、过期架构描述与过程快照清理）、测试治理（快测与重测分层防 AI 频繁空跑耗时测试、排查孤儿测试与慢单测、清理无效测试并保障无副作用隔离）、并行 Git Worktree 卫生盘点，以及将项目硬规则落地为仓库内确定性静态检查。用户要求体检或整理项目文档与 AGENTS.md、给测试做快慢分层、清理冗余测试或闲置 Worktree，或把规范写成自动检查时使用；不用于单次功能的方案撰写（交给 oil-plan）、单次改动的 Code Review（交给 oil-code-review）或单个缺陷的排查与止损（交给 oil-bug-fix）。"
+description: "对长期迭代项目执行文档与规范治理（单源同步 @AGENTS.md、常驻规范减负、过期架构描述与过程快照清理）、测试治理（快测与重测分层防 AI 频繁空跑耗时测试、排查孤儿测试与慢单测、清理无效测试并保障无副作用隔离）、并行 Git Worktree 卫生盘点、用看板讲清每个分支在哪、改了什么和该怎么处理，以及将项目硬规则落地为仓库内确定性静态检查。用户要求体检或整理项目文档与 AGENTS.md、给测试做快慢分层、清理冗余测试或闲置 Worktree、看清仓库分支和工作树的状态，或把规范写成自动检查时使用；不用于单次功能的方案撰写（交给 oil-plan）、单次改动的 Code Review（交给 oil-code-review）或单个缺陷的排查与止损（交给 oil-bug-fix）。"
 license: MIT
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
 ---
 
 # oil-govern
@@ -24,13 +24,14 @@ metadata:
 | 全仓体检 | 阶段性维护，快速盘点文档、测试与 Worktree 现状 | `AUDIT_REPO --scope all` → 定向抽查热点文件 → 输出分级整改清单 | 呈现客观问题清单请用户勾选 |
 | 文档与规范治理 | 同步入口规则、清理过期描述/死链、归档过程快照、建立或校准开发约定 | `AUDIT_REPO --scope docs` → 对照近期活跃代码核查核心文档 → 更新瘦身 | 常驻文档准确清爽、零死链且开发约定可用 |
 | 测试分层与瘦身 | AI 跑测试太频繁太慢、存在孤儿/无效测试或漏测盲区 | `AUDIT_REPO --scope tests` → 拆分快慢入口 + 写控频规则 + 清理慢/假测试 | 跑通快测入口并确认重测分层 |
+| 分支看板 | 想知道各分支和工作树在哪、推没推、进没进主干、改了什么，本地和云端是否一致 | `AUDIT_REPO --scope board --fetch --json` → 读未合入分支的改动并给建议 → 画出或写出看板 | 交付看板，等用户选择下一步 |
 | Worktree / 脚本化 | 清理并行工作树、把文字规矩写成项目内静态检查 | 盘点 Worktree / 编写项目内检查测试 | 完成清理或接入检查 |
 
 ## 工作流
 
 ### 1. 采集客观治理快照
 
-动手修改前先运行只读采集脚本（支持 `--scope all|docs|tests|worktrees` 与 `--json`）：
+动手修改前先运行只读采集脚本（支持 `--scope all|docs|tests|worktrees|board` 与 `--json`）：
 
 ```text
 AUDIT_REPO --workspace "<项目路径>" --scope all
@@ -53,14 +54,23 @@ AUDIT_REPO --workspace "<项目路径>" --scope all
 2. **排查孤儿测试与慢单测混入**：以快照里的 `ci_run_steps`（CI 实际执行的命令）和已定义脚本为准，逐个核对测试目录是否真被某条命令执行到，没被任何入口覆盖的就是孤儿测试候选；快照提示“未发现 CI 配置”时，如实说明无法客观确认，只能对照本地测试入口判断。若有耗时几十秒的重计算用例混在普通单测层，提议抽离或优化。
 3. **清理无效测试并守住隔离底线**：清理零业务断言、重度 mock 自证或硬写长 `sleep` 的低价值测试；确认客户端/桌面测试全程无头运行、不弹窗抢焦点、不污染用户真实配置域。
 
-### 4. Worktree 卫生与项目内脚本化
+### 4. 分支看板
+
+阅读 [分支看板](references/branch-board.md)，按其中的分组、说法和版式执行：
+
+1. 运行 `AUDIT_REPO --workspace "<项目路径>" --scope board --fetch --json`。没有网络时去掉 `--fetch`，并说明云端状态可能不是最新的。
+2. 对“需要你决定”和“正在进行”里的每条分支，读它的提交和主要改动，用一句用户听得懂的话说清改了什么，再给出建议和理由。
+3. 宿主能在对话里渲染界面时把看板画出来，不能时用参考里的 Markdown 模板；两种呈现的内容和顺序相同。
+4. 推送、合并、删除分支或清理工作目录，都等用户选择后再做。
+
+### 5. Worktree 卫生与项目内脚本化
 
 - **并行 Worktree 与分支清理**：若快照显示子 Worktree 直接嵌套在主仓库目录内，建议移至同级父目录或加入忽略规则。按快照里的合入状态区别对待：
   - 标为“可清理候选”的（普通合并、squash 或 rebase 合入，且没有未提交改动）：提示直接切新分支复用其热编译缓存，或移除回收空间。
   - 标为“没有独立提交”的：可能是刚建还没开工，也可能已快进合并，脚本无法区分，先问用户。
   - 有未提交改动的：一律不清理，先告诉用户有哪些改动。
   - “远端分支已删除”只是辅助信号，不能单独作为清理依据。
-  - 执行 `git worktree remove` 或删除分支前，列出清单并征得用户确认。
+  - 执行 `git worktree remove` 或删除分支前，列出清单并征得用户确认。要删的分支或工作树带有未合入的提交时，先让一个独立的只读 Agent 核对这些提交是否已在别处保存、删了能不能找回，再请用户确认。
 - **项目硬规则转静态测试**：阅读 `AGENTS.md` / `DESIGN.md` 中的明确禁令（如分层禁引、禁用控件样式、单文件行数阈值、打包资源规范），在**目标仓库的测试套或 `scripts/`** 中编写简洁易读的静态检查。
 - **单个顽固缺陷不在这里处理**：连修两轮仍卡住的缺陷，交给 `oil-bug-fix` 的止损步骤。`oil-bug-fix` 提议把某类普遍问题写成自动检查、用户同意后，由本 Skill 编写。
 
@@ -75,6 +85,7 @@ AUDIT_REPO --workspace "<项目路径>" --scope all
 ## 资源导航
 
 - [references/governance-guide.md](references/governance-guide.md)：包含常驻文档分层保鲜、快慢测试分层控频、Worktree 热缓存复用与项目内静态检查落地。
+- [references/branch-board.md](references/branch-board.md)：生成分支看板时阅读，含字段说明、建议的判断依据、提醒的说法，以及界面和 Markdown 两种版式。
 - [references/dev-profile.md](references/dev-profile.md)：建立或校准 `AGENTS.md` 中 `oil-dev` 开发约定时阅读，含格式、各 Skill 的用法与生成步骤。
-- [scripts/audit_repo.py](scripts/audit_repo.py)：零第三方依赖、零生硬语义正则的文档死链与新鲜度、Git 演进温差、大文件、CI 命令与 Worktree 合入状态采集脚本。
+- [scripts/audit_repo.py](scripts/audit_repo.py)：零第三方依赖、零生硬语义正则的文档死链与新鲜度、Git 演进温差、大文件、CI 命令、Worktree 合入状态与分支看板采集脚本。
 - [tests/test_audit_repo.py](tests/test_audit_repo.py)：`audit_repo.py` 的回归测试，仅在修改脚本时运行。
