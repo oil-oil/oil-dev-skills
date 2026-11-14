@@ -105,11 +105,18 @@ class CollectionStructureTest(unittest.TestCase):
             inspect.getsource(reference._matches_any),
         )
 
+    def test_shared_preferences_script_stays_identical(self) -> None:
+        """oil-explore 与 oil-plan 读写同一份个人偏好文件，脚本必须逐字一致。"""
+        copies = [SKILLS_DIR / name / "scripts" / "preferences.py" for name in ("oil-explore", "oil-plan")]
+        self.assertEqual(copies[0].read_bytes(), copies[1].read_bytes(), "preferences.py differs between oil-explore and oil-plan")
+
     def test_cli_entrypoints_respond_to_help(self) -> None:
         scripts = [
             REPO_ROOT / "scripts" / "verify_repo.py",
             REPO_ROOT / "scripts" / "sync_delegate.py",
             SKILLS_DIR / "oil-explore" / "scripts" / "repo_map.py",
+            SKILLS_DIR / "oil-explore" / "scripts" / "preferences.py",
+            SKILLS_DIR / "oil-plan" / "scripts" / "preferences.py",
             SKILLS_DIR / "oil-delegate" / "scripts" / "delegate.py",
             SKILLS_DIR / "oil-code-review" / "scripts" / "review_helper.py",
             SKILLS_DIR / "oil-govern" / "scripts" / "audit_repo.py",

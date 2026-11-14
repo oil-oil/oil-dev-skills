@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -205,6 +206,112 @@ class AuditRepoTest(unittest.TestCase):
                 ["ci.yml: npm ci", "ci.yml: npm test -- --run", "ci.yml: npm run e2e", "ci.yml: make lint"],
             )
             self.assertTrue(ct["has_ci_config"])
+
+    def test_board_groups_branches_and_flags_main_drift(self) -> None:
+        """分支看板：只在本机的分支、主干本地多出的提交、跟踪错对象、别处推上来的分支都要标出来。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            origin = base / "origin.git"
+            _git(base, "init", "-q", "--bare", "-b", "main", str(origin))
+            root = base / "repo"
+            _git(base, "clone", "-q", str(origin), str(root))
+            for key, value in (("user.email", "dev@example.com"), ("user.name", "Dev"), ("commit.gpgsign", "false")):
+                _git(root, "config", key, value)
+            _commit_file(root, "a.py", "1\n", "init")
+            _git(root, "push", "-q", "-u", "origin", "main")
+            _git(root, "remote", "set-head", "origin", "main")
+
+            _git(root, "switch", "-q", "-c", "feat/done")
+            _commit_file(root, "done.py", "d\n", "done")
+            _git(root, "push", "-q", "-u", "origin", "feat/done")
+            _git(root, "switch", "-q", "main")
+            _git(root, "merge", "-q", "--no-ff", "feat/done", "-m", "Merge pull request #1")
+            _git(root, "push", "-q", "origin", "main")
+
+            _git(root, "switch", "-q", "-c", "feat/local-only")
+            _commit_file(root, "local.py", "x\ny\n", "local work")
+            _git(root, "switch", "-q", "main")
+
+            _git(root, "switch", "-q", "-c", "fix/wrong-upstream", "--track", "origin/main")
+            _commit_file(root, "w.py", "w\n", "wrong upstream")
+            _git(root, "switch", "-q", "main")
+
+            _git(root, "switch", "-q", "-c", "feat/active")
+            _commit_file(root, "active.py", "a\n", "active work")
+            _git(root, "push", "-q", "-u", "origin", "feat/active")
+            _git(root, "switch", "-q", "main")
+            wt = base / "wt-active"
+            _git(root, "worktree", "add", "-q", str(wt), "feat/active")
+            (wt / "active.py").write_text("a\nmore\n", encoding="utf-8")
+
+            other = base / "other"
+            _git(base, "clone", "-q", str(origin), str(other))
+            for key, value in (("user.email", "dev@example.com"), ("user.name", "Dev"), ("commit.gpgsign", "false")):
+                _git(other, "config", key, value)
+            _git(other, "switch", "-q", "-c", "feat/elsewhere")
+            _commit_file(other, "elsewhere.py", "e\n", "pushed from another machine")
+            _git(other, "push", "-q", "-u", "origin", "feat/elsewhere")
+
+            _commit_file(root, "direct.py", "oops\n", "committed straight to main")
+
+            board = audit_repo.run_governance_audit(root, scope="board", fetch=True)["board"]
+            self.assertEqual(board["base"], "origin/main")
+            self.assertTrue(board["fetch"]["ok"])
+            self.assertEqual(board["pr_source"], "unavailable")
+            self.assertIn("main_has_local_commits", board["repo_flags"])
+            self.assertEqual([c["subject"] for c in board["main"]["local_only_commits"]], ["committed straight to main"])
+
+            by_name = {b["name"]: b for b in board["branches"] + board["remote_only_branches"]}
+            self.assertEqual(by_name["feat/done"]["group"], "cleanable")
+            self.assertNotIn("changes", by_name["feat/done"])
+
+            local_only = by_name["feat/local-only"]
+            self.assertEqual(local_only["group"], "needs_decision")
+            self.assertIn("local_only", local_only["flags"])
+            self.assertEqual(local_only["changes"]["commits"][0]["subject"], "local work")
+            self.assertEqual(local_only["changes"]["files"], [{"path": "local.py", "added": 2, "deleted": 0}])
+
+            self.assertIn("tracks_other_branch", by_name["fix/wrong-upstream"]["flags"])
+            self.assertEqual(by_name["fix/wrong-upstream"]["group"], "needs_decision")
+
+            active = by_name["feat/active"]
+            self.assertEqual(active["group"], "in_progress")
+            self.assertIn("uncommitted_changes", active["flags"])
+            self.assertEqual(Path(active["worktree"]["path"]).resolve(), wt.resolve())
+            self.assertEqual(active["worktree"]["uncommitted_sample"], ["active.py"])
+
+            elsewhere = by_name["feat/elsewhere"]
+            self.assertEqual(elsewhere["kind"], "remote_only")
+            self.assertEqual(elsewhere["group"], "in_progress")
+            self.assertEqual(elsewhere["changes"]["commits"][0]["subject"], "pushed from another machine")
+
+            self.assertEqual(sorted(board["groups"]["needs_decision"]), ["feat/local-only", "fix/wrong-upstream"])
+            self.assertGreaterEqual(board["remote_merged_branches_total"], 1)
+
+    def test_board_marks_idle_branches_stale_and_dirty_main_worktree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _init_repo(root)
+            _commit_file(root, "a.py", "1\n", "init")
+            _git(root, "switch", "-q", "-c", "feat/old")
+            (root / "old.py").write_text("o\n", encoding="utf-8")
+            _git(root, "add", "old.py")
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "old work"], cwd=str(root), check=True, capture_output=True,
+                env={**os.environ, "GIT_AUTHOR_DATE": "2020-01-01T00:00:00", "GIT_COMMITTER_DATE": "2020-01-01T00:00:00"},
+            )
+            _git(root, "switch", "-q", "main")
+            (root / "a.py").write_text("changed\n", encoding="utf-8")
+
+            board = audit_repo.run_governance_audit(root, scope="board")["board"]
+            self.assertEqual(board["base"], "main")
+            self.assertIn("main_worktree_dirty", board["repo_flags"])
+            old = board["branches"][0]
+            self.assertEqual(old["name"], "feat/old")
+            self.assertIn("stale", old["flags"])
+            self.assertIn("local_only", old["flags"])
+            self.assertEqual(old["group"], "needs_decision")
+            self.assertEqual(board["main_worktree"]["uncommitted_sample"], ["a.py"])
 
 
 if __name__ == "__main__":

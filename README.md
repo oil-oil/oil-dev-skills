@@ -18,6 +18,7 @@ As a project grows, asking an AI agent to edit code directly often runs into the
 - **Diffs that drift beyond the agreed plan or touch restricted directories.** Before review starts, a helper script compares the diff against the confirmed plan and project conventions and flags those files upfront.
 - **Patching symptoms while the same bug pattern remains elsewhere.** `oil-bug-fix` reproduces the failure and traces the root cause so the fix happens where bad data originates. It then checks whether the issue is systemic—if so, it scans the repo, fixes matching cases together, and proposes a deterministic check or review rule so it doesn't come back.
 - **`AGENTS.md` drifting out of sync with the code and stale worktrees piling up.** `oil-govern` checks documentation links and freshness, test tiering, and worktree merge status before proposing cleanup.
+- **Losing track of branches: an agent editing in another worktree, local `main` drifting from the remote, work that only exists on one machine.** `oil-govern` builds a branch board that shows where every branch lives, whether it is pushed and merged, what it changes, and what to do with it, with its own recommendation for each one.
 
 ## Check scope before reviewing
 
@@ -36,11 +37,11 @@ The review then handles each group differently:
 ## The six skills
 
 - **Explore · [`oil-explore`](skills/oil-explore/SKILL.md)**: Takes a read-only inventory of directory size, convention files, and working test and build commands. On larger repositories, it dispatches read-only sub-agents by module to trace call chains in parallel.
-- **Plan · [`oil-plan`](skills/oil-plan/SKILL.md)**: Scales across three levels. Small edits go straight to code; regular features align on a plan in chat; cross-module changes become a written spec that can fan out across multiple worktrees. After implementation, it verifies the result and merges through a closing checklist.
+- **Plan · [`oil-plan`](skills/oil-plan/SKILL.md)**: Scales across three levels. Small edits go straight to code; regular features align on a plan in chat; cross-module changes become a written spec that can fan out across multiple worktrees. Regular and cross-module plans get an independent critique before you see them. After implementation, it verifies the result and merges through a closing checklist. When you ask for sub-agent mode, the main agent only makes decisions—splitting work, writing contracts, making calls, and accepting results—while sub-agents do all the exploring, coding, debugging, review, and gate runs.
 - **Delegate · [`oil-delegate`](skills/oil-delegate/SKILL.md)**: Hands off a well-bounded task to locally installed CLI agents such as Claude Code, Codex, or Antigravity, returns structured results to your current session, and lets you follow up in the same thread. It can remember which agent you prefer for code review, plan critique, debugging consultations, and implementation.
 - **Review · [`oil-code-review`](skills/oil-code-review/SKILL.md)**: Reviews code diffs only. It checks scope drift against the plan first, then grades by risk: lightweight checks for minor UI tweaks, and a five-part deep review in a clean context for core logic and high-risk changes—covering end-to-end business and build verification, reuse, redundancy, runtime failure modes, and security and compatibility.
 - **Bug Fix · [`oil-bug-fix`](skills/oil-bug-fix/SKILL.md)**: Handles bugs whose cause isn't obvious yet. It reproduces the issue with a failing test, locates the root cause through git bisect, backward value tracing, or controlled experiments, and fixes where the bad state starts. If the pattern is systemic, it scans the repo to fix matching spots together and proposes an automated check or review rule. Small fixes with a known cause go straight through `oil-plan`.
-- **Govern · [`oil-govern`](skills/oil-govern/SKILL.md)**: Audits documentation, test tiers, and git worktrees, helps generate and maintain your project's dev profile, and turns hard project rules into deterministic repo checks.
+- **Govern · [`oil-govern`](skills/oil-govern/SKILL.md)**: Audits documentation, test tiers, and git worktrees, shows a branch board with a recommendation for every unmerged branch, helps generate and maintain your project's dev profile, and turns hard project rules into deterministic repo checks. The board is drawn as UI when your agent can render it, and as Markdown otherwise.
 
 ## Installation
 
@@ -90,7 +91,15 @@ Use oil-code-review to review the changes on the current branch, focusing on cor
 ```
 
 ```text
+Use oil-plan in sub-agent mode for this feature: you only make decisions, and sub-agents do the exploring, coding, and review.
+```
+
+```text
 Use oil-govern to audit the repository—check for stale docs, review the test tiering, and see which worktrees can be cleaned up.
+```
+
+```text
+Use oil-govern to show me the branch board: where each branch is, what it changes, and what I should do with it.
 ```
 
 Once review passes, `oil-plan` runs the merge gate from its closing checklist, commits and merges according to the repo's conventions, and cleans up the merged worktree.
@@ -122,9 +131,13 @@ If you'd rather not write it by hand, tell your agent: "Use oil-govern to genera
 
 Settings that apply only to you live in `~/.oil-dev/preferences.md` on your machine. All skills in this collection share that single file, with one section per skill written in plain language. Notes directly under a skill heading apply across all host agents, while notes under `### <host-name>` apply only to that host. This file stays out of project repositories; team-wide conventions still belong in the dev profile above.
 
-Currently, `oil-explore` reads this file when fanning out parallel exploration. You can specify how each host should dispatch exploration sub-agents: which mechanism to use, which model to pick, the maximum number of sub-agents, and how to clean them up afterward.
+Currently, `oil-plan` reads it to decide whether sub-agent mode is on by default, and `oil-explore` reads it when fanning out parallel exploration. You can specify how each host should dispatch exploration sub-agents: which mechanism to use, which model to pick, the maximum number of sub-agents, and how to clean them up afterward.
 
 ```markdown
+## oil-plan
+
+Use sub-agent mode: you only make decisions.
+
 ## oil-explore
 
 At most 3 exploration sub-agents.
@@ -147,10 +160,11 @@ From now on, when using oil-explore in Claude Code, run exploration sub-agents o
 
 Anything left unspecified uses the default: 2–3 sub-agents on a fast, lightweight model. Preferences for `oil-delegate` (which CLI agents are enabled and which agent handles each task type) are stored in its own config file rather than here.
 
-## Permissions and boundaries
+## Permissions, privacy, and boundaries
 
 - `oil-explore` is strictly read-only. `oil-code-review` and `oil-govern` are also read-only while gathering facts; before editing docs, deleting tests, or removing worktrees, they show the evidence and wait for your confirmation.
 - `oil-plan` does not start cross-module code edits until open trade-offs have your sign-off.
+- Before important operations—merging into the main branch, bulk deletes, deleting branches or worktrees with unmerged commits, rewriting pushed history, changing data formats or database schemas, releasing, or changing public interfaces—an independent read-only agent checks what will be affected, whether it can be undone, and what might be missing. You then confirm with that check in front of you.
 - While isolating a root cause, `oil-bug-fix` only adds tests and temporary diagnostic logs without altering production behavior; it asks before adding automated checks or updating `AGENTS.md` or `REVIEW.md`.
 - When `oil-delegate` runs code reviews, plan critiques, or debugging consultations, it uses read-only mode automatically and verifies afterward that the working tree is untouched. Before dispatching a task that writes code, it requires a clean working tree or an isolated worktree.
 - Prompts and files handed to external CLI agents are sent to their respective model providers and may incur usage costs. Do not include secrets or credentials in task prompts.

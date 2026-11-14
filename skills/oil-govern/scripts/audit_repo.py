@@ -645,10 +645,293 @@ def _audit_worktrees(root: Path) -> dict[str, Any]:
     }
 
 
-def run_governance_audit(workspace: Path, scope: str = "all") -> dict[str, Any]:
+# ---- 分支看板：每个分支在哪、推没推、进没进主干、改了什么 ----
+
+BOARD_STALE_DAYS = 7
+BOARD_MAX_COMMITS = 15
+BOARD_MAX_FILES = 20
+BOARD_MAX_REMOTE_ONLY = 20
+BOARD_FETCH_TIMEOUT = 60
+BOARD_GH_TIMEOUT = 20
+
+
+def _git_ok(root: Path, args: list[str]) -> bool:
+    return _run_git(root, args)[0] == 0
+
+
+def _board_base(root: Path) -> tuple[str, str]:
+    """返回 (本地主干名, 用来判断“进没进主干”的比较基准)。有云端主干时以云端为准。"""
+    rc, head = _run_git(root, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])
+    if rc == 0 and head.strip():
+        remote_default = head.strip()
+        return remote_default.split("/", 1)[1], remote_default
+    for cand in ("main", "master"):
+        if _git_ok(root, ["rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{cand}"]):
+            return cand, f"origin/{cand}"
+    for cand in ("main", "master"):
+        if _git_ok(root, ["rev-parse", "--verify", "--quiet", f"refs/heads/{cand}"]):
+            return cand, cand
+    return "", ""
+
+
+def _board_fetch(root: Path) -> dict[str, Any]:
+    if not _git_ok(root, ["remote", "get-url", "origin"]):
+        return {"attempted": False, "ok": False, "reason": "no_origin"}
+    try:
+        proc = subprocess.run(
+            ["git", "fetch", "--prune", "--quiet", "origin"],
+            cwd=str(root), capture_output=True, text=True, timeout=BOARD_FETCH_TIMEOUT, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"attempted": True, "ok": False, "reason": type(exc).__name__}
+    return {"attempted": True, "ok": proc.returncode == 0, "reason": proc.stderr.strip()[:200] or None}
+
+
+def _last_fetch_age_hours(root: Path) -> float | None:
+    rc, common = _run_git(root, ["rev-parse", "--git-common-dir"])
+    if rc != 0:
+        return None
+    fetch_head = (root / common.strip()).resolve() / "FETCH_HEAD"
+    if not fetch_head.exists():
+        return None
+    return round((time.time() - fetch_head.stat().st_mtime) / 3600, 1)
+
+
+def _pull_requests(root: Path) -> tuple[str, dict[str, dict[str, Any]]]:
+    """用 gh 读取 PR（只读）；没装、没登录或不是 GitHub 仓库时返回 unavailable。"""
+    rc, url = _run_git(root, ["remote", "get-url", "origin"])
+    if rc != 0 or "github.com" not in url:
+        return "unavailable", {}
+    try:
+        proc = subprocess.run(
+            ["gh", "pr", "list", "--state", "all", "--limit", "200", "--json", "number,state,headRefName,url,isDraft"],
+            cwd=str(root), capture_output=True, text=True, timeout=BOARD_GH_TIMEOUT, check=False,
+        )
+        rows = json.loads(proc.stdout) if proc.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        rows = None
+    if not isinstance(rows, list):
+        return "unavailable", {}
+    by_branch: dict[str, dict[str, Any]] = {}
+    for row in sorted(rows, key=lambda r: r.get("number", 0)):
+        current = by_branch.get(row.get("headRefName", ""))
+        if current and current["state"] == "OPEN" and row.get("state") != "OPEN":
+            continue
+        by_branch[row.get("headRefName", "")] = {
+            "number": row.get("number"), "state": row.get("state"), "url": row.get("url"), "draft": row.get("isDraft", False),
+        }
+    return "gh", by_branch
+
+
+def _branch_changes(root: Path, base: str, ref: str) -> dict[str, Any]:
+    _, log_out = _run_git(root, ["log", "--no-merges", f"--max-count={BOARD_MAX_COMMITS}", "--format=%h%x00%cs%x00%s", f"{base}..{ref}"])
+    commits = []
+    for line in log_out.splitlines():
+        parts = line.split("\0")
+        if len(parts) == 3:
+            commits.append({"sha": parts[0], "date": parts[1], "subject": parts[2]})
+    rc_mb, mb = _run_git(root, ["merge-base", base, ref])
+    files: list[dict[str, Any]] = []
+    if rc_mb == 0 and mb.strip():
+        _, numstat = _run_git(root, ["diff", "--numstat", "--no-renames", mb.strip(), ref])
+        for line in numstat.splitlines():
+            added, deleted, path = (line.split("\t", 2) + ["", ""])[:3]
+            if path:
+                files.append({
+                    "path": path,
+                    "added": int(added) if added.isdigit() else None,
+                    "deleted": int(deleted) if deleted.isdigit() else None,
+                })
+    files.sort(key=lambda f: -((f["added"] or 0) + (f["deleted"] or 0)))
+    return {
+        "commits": commits,
+        "files_total": len(files),
+        "insertions": sum(f["added"] or 0 for f in files),
+        "deletions": sum(f["deleted"] or 0 for f in files),
+        "files": files[:BOARD_MAX_FILES],
+    }
+
+
+def _worktree_map(root: Path) -> list[dict[str, Any]]:
+    rc, out = _run_git(root, ["worktree", "list", "--porcelain"])
+    rows: list[dict[str, Any]] = []
+    cur: dict[str, Any] = {}
+    for line in (out.splitlines() if rc == 0 else []) + [""]:
+        if not line.strip():
+            if cur.get("path"):
+                rows.append(cur)
+            cur = {}
+        elif line.startswith("worktree "):
+            cur["path"] = line[9:].strip()
+        elif line.startswith("branch "):
+            cur["branch"] = line[7:].strip().removeprefix("refs/heads/")
+        elif line == "detached":
+            cur["branch"] = None
+    for idx, wt in enumerate(rows):
+        wt["is_main_worktree"] = idx == 0
+        path = Path(wt["path"])
+        rc_st, st = _run_git(path, ["status", "--porcelain"]) if path.is_dir() else (1, "")
+        entries = [ln for ln in st.splitlines() if ln.strip()] if rc_st == 0 else []
+        wt["exists"] = path.is_dir()
+        wt["uncommitted_entries"] = len(entries)
+        wt["uncommitted_sample"] = [ln[3:] for ln in entries[:8]]
+    return rows
+
+
+def _days_since(date_iso: str) -> int | None:
+    try:
+        return int((time.time() - time.mktime(time.strptime(date_iso[:10], "%Y-%m-%d"))) // 86400)
+    except ValueError:
+        return None
+
+
+def _board_group(item: dict[str, Any]) -> str:
+    flags = set(item["flags"])
+    if flags & {"local_only", "tracks_other_branch", "remote_deleted_unmerged", "stale", "merged_but_dirty", "closed_pr_unmerged"}:
+        return "needs_decision"
+    if item["merge_state"] in MERGED_STATES or (item["merge_state"] == "no_own_commits" and not item.get("worktree")):
+        return "cleanable"
+    return "in_progress"
+
+
+def _audit_board(root: Path, fetch: bool) -> dict[str, Any]:
+    fetch_info = _board_fetch(root) if fetch else {"attempted": False, "ok": False, "reason": "not_requested"}
+    default, base = _board_base(root)
+    if not base:
+        return {"error": "找不到主干分支（main / master）"}
+    ctx = _default_branch_context(root, base)
+    pr_source, prs = _pull_requests(root)
+    worktrees = _worktree_map(root)
+    wt_by_branch = {wt["branch"]: wt for wt in worktrees if wt.get("branch")}
+
+    repo_flags: list[str] = []
+    main_sync: dict[str, Any] = {"default_branch": default, "base": base, "local_only_commits": [], "ahead": 0, "behind": 0}
+    if base != default and _git_ok(root, ["rev-parse", "--verify", "--quiet", f"refs/heads/{default}"]):
+        rc, counts = _run_git(root, ["rev-list", "--left-right", "--count", f"{base}...{default}"])
+        if rc == 0 and len(counts.split()) == 2:
+            main_sync["behind"], main_sync["ahead"] = (int(x) for x in counts.split())
+        if main_sync["ahead"]:
+            repo_flags.append("main_has_local_commits")
+            main_sync["local_only_commits"] = _branch_changes(root, base, default)["commits"]
+        if main_sync["behind"]:
+            repo_flags.append("main_behind_remote")
+    main_wt = worktrees[0] if worktrees else None
+    if main_wt and main_wt.get("branch") != default:
+        repo_flags.append("main_worktree_not_on_default")
+    if main_wt and main_wt["uncommitted_entries"]:
+        repo_flags.append("main_worktree_dirty")
+    fetch_age = _last_fetch_age_hours(root)
+    if not fetch_info["ok"] and (fetch_age is None or fetch_age > 24):
+        repo_flags.append("remote_info_stale")
+
+    branches: list[dict[str, Any]] = []
+    rc, refs = _run_git(root, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)%00%(upstream:short)%00%(upstream:track)%00%(committerdate:short)", "refs/heads"])
+    local_names = set()
+    for line in (refs.splitlines() if rc == 0 else [])[:MAX_BRANCHES_CHECKED]:
+        name, upstream, track, date = (line.split("\0") + ["", "", ""])[:4]
+        if not name or name == default:
+            continue
+        local_names.add(name)
+        state = _branch_merge_state(root, name, ctx)
+        remote_ref = f"origin/{name}"
+        on_remote = _git_ok(root, ["rev-parse", "--verify", "--quiet", f"refs/remotes/{remote_ref}"])
+        unpushed = None
+        if on_remote:
+            _, cnt = _run_git(root, ["rev-list", "--count", f"{remote_ref}..{name}"])
+            unpushed = int(cnt.strip() or 0)
+        wt = wt_by_branch.get(name)
+        item: dict[str, Any] = {
+            "name": name,
+            "kind": "local",
+            "merge_state": state["merge_state"],
+            "ahead_of_base": state["ahead"],
+            "behind_base": state["behind"],
+            "last_commit": date,
+            "days_idle": _days_since(date),
+            "on_remote": on_remote,
+            "unpushed_commits": unpushed,
+            "upstream": upstream or None,
+            "worktree": {"path": wt["path"], "uncommitted_entries": wt["uncommitted_entries"], "uncommitted_sample": wt["uncommitted_sample"]} if wt else None,
+            "pr": prs.get(name),
+            "flags": [],
+        }
+        merged = state["merge_state"] in MERGED_STATES
+        if not merged and state["merge_state"] != "no_own_commits":
+            if not on_remote and "gone" not in track:
+                item["flags"].append("local_only")
+            elif unpushed:
+                item["flags"].append("unpushed_commits")
+            if "gone" in track:
+                item["flags"].append("remote_deleted_unmerged")
+            if item["pr"] and item["pr"]["state"] == "CLOSED":
+                item["flags"].append("closed_pr_unmerged")
+            open_pr = item["pr"] and item["pr"]["state"] == "OPEN"
+            if not open_pr and (item["days_idle"] or 0) >= BOARD_STALE_DAYS:
+                item["flags"].append("stale")
+        if upstream and upstream != remote_ref and "gone" not in track:
+            item["flags"].append("tracks_other_branch")
+        if wt and wt["uncommitted_entries"]:
+            item["flags"].append("merged_but_dirty" if merged else "uncommitted_changes")
+        if not merged and state["merge_state"] != "no_own_commits":
+            item["changes"] = _branch_changes(root, base, name)
+        item["group"] = _board_group(item)
+        branches.append(item)
+
+    remote_only: list[dict[str, Any]] = []
+    remote_merged_total = 0
+    rc, rrefs = _run_git(root, ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)%00%(committerdate:short)", "refs/remotes/origin"])
+    for line in rrefs.splitlines() if rc == 0 else []:
+        ref, date = (line.split("\0") + [""])[:2]
+        short = ref.removeprefix("origin/")
+        if short in {"HEAD", default, "origin"} or ref == base:
+            continue
+        state = _branch_merge_state(root, ref, ctx)
+        if state["merge_state"] in MERGED_STATES or state["merge_state"] == "no_own_commits":
+            remote_merged_total += 1
+            continue
+        if short in local_names or len(remote_only) >= BOARD_MAX_REMOTE_ONLY:
+            continue
+        item = {
+            "name": short, "kind": "remote_only", "merge_state": state["merge_state"], "ahead_of_base": state["ahead"],
+            "last_commit": date, "days_idle": _days_since(date), "on_remote": True, "worktree": None,
+            "pr": prs.get(short), "flags": [], "changes": _branch_changes(root, base, ref),
+        }
+        if item["pr"] and item["pr"]["state"] == "CLOSED":
+            item["flags"].append("closed_pr_unmerged")
+        if not (item["pr"] and item["pr"]["state"] == "OPEN") and (item["days_idle"] or 0) >= BOARD_STALE_DAYS:
+            item["flags"].append("stale")
+        item["group"] = _board_group(item)
+        remote_only.append(item)
+
+    all_items = branches + remote_only
+    return {
+        "default_branch": default,
+        "base": base,
+        "fetch": fetch_info,
+        "last_fetch_hours_ago": fetch_age,
+        "pr_source": pr_source,
+        "main": main_sync,
+        "main_worktree": main_wt,
+        "worktrees": worktrees,
+        "repo_flags": repo_flags,
+        "groups": {
+            g: [i["name"] for i in all_items if i["group"] == g] for g in ("needs_decision", "in_progress", "cleanable")
+        },
+        "branches": branches,
+        "remote_only_branches": remote_only,
+        "remote_merged_branches_total": remote_merged_total,
+    }
+
+
+def run_governance_audit(workspace: Path, scope: str = "all", fetch: bool = False) -> dict[str, Any]:
     root = workspace.expanduser().resolve()
     if not root.is_dir():
         return {"contract_version": CONTRACT_VERSION, "status": "ERROR", "error": f"找不到目录：{workspace}"}
+    if scope == "board":
+        board = _audit_board(root, fetch)
+        if "error" in board:
+            return {"contract_version": CONTRACT_VERSION, "status": "ERROR", "error": board["error"]}
+        return {"contract_version": CONTRACT_VERSION, "status": "OK", "workspace": str(root), "scope": scope, "board": board}
 
     rel_files = _list_repo_files(root)
     churn = _collect_git_churn(root) if scope in {"all", "tests"} else Counter()
@@ -673,9 +956,58 @@ MERGE_STATE_LABELS = {
 }
 
 
+BOARD_FLAG_TEXT = {
+    "main_has_local_commits": "本机主干比云端多出提交（没经过 PR）",
+    "main_behind_remote": "本机主干落后云端",
+    "main_worktree_not_on_default": "主目录没有停在主干上",
+    "main_worktree_dirty": "主目录有没提交的改动",
+    "remote_info_stale": "超过一天没从云端同步，云端状态可能过期",
+    "local_only": "只在本机，云端没有",
+    "unpushed_commits": "有提交还没推到云端",
+    "remote_deleted_unmerged": "云端分支已删除，但改动没进主干",
+    "closed_pr_unmerged": "PR 已关闭，改动没进主干",
+    "stale": f"超过 {BOARD_STALE_DAYS} 天没动，也没有打开的 PR",
+    "tracks_other_branch": "跟踪的不是云端同名分支",
+    "merged_but_dirty": "已进主干，但工作目录里还有没提交的改动",
+    "uncommitted_changes": "工作目录里有没提交的改动",
+}
+BOARD_GROUP_TITLES = {"needs_decision": "需要你决定", "in_progress": "正在进行", "cleanable": "已进主干，可以清理"}
+
+
+def _print_board(report: dict[str, Any]) -> None:
+    board = report["board"]
+    main = board["main"]
+    print(f"# 分支看板：{report['workspace']}")
+    sync = "一致" if not (main["ahead"] or main["behind"]) else f"本机多 {main['ahead']} 个提交、少 {main['behind']} 个提交"
+    print(f"\n- 主干 `{board['default_branch']}`：和 `{board['base']}` 相比{sync}")
+    for flag in board["repo_flags"]:
+        print(f"- [注意] {BOARD_FLAG_TEXT.get(flag, flag)}")
+    for commit in main["local_only_commits"][:5]:
+        print(f"  - 只在本机主干：{commit['sha']} {commit['subject']}")
+    print(f"- 工作目录：{len(board['worktrees'])} 个；PR 信息：{'已读取' if board['pr_source'] == 'gh' else '读取不到'}")
+    items = board["branches"] + board["remote_only_branches"]
+    for group, title in BOARD_GROUP_TITLES.items():
+        names = board["groups"][group]
+        print(f"\n## {title}（{len(names)}）")
+        for item in items:
+            if item["group"] != group:
+                continue
+            where = f"工作目录 `{item['worktree']['path']}`" if item.get("worktree") else ("只在云端" if item["kind"] == "remote_only" else "没有工作目录")
+            pr = f"，PR #{item['pr']['number']}（{item['pr']['state']}）" if item.get("pr") else ""
+            notes = "；".join(BOARD_FLAG_TEXT.get(f, f) for f in item["flags"])
+            changes = item.get("changes")
+            size = f"，{changes['files_total']} 个文件 +{changes['insertions']}/-{changes['deletions']}" if changes else ""
+            print(f"- `{item['name']}`：{where}，最后改动 {item['last_commit']}{pr}{size}" + (f"。{notes}" if notes else ""))
+    if board["remote_merged_branches_total"]:
+        print(f"\n- 云端共有 {board['remote_merged_branches_total']} 个已进主干的分支可以删除")
+
+
 def _print_human(report: dict[str, Any]) -> None:
     if report.get("status") != "OK":
         print(f"[ERROR] {report.get('error')}")
+        return
+    if report.get("board"):
+        _print_board(report)
         return
 
     print(f"# 仓库治理事实快照：{report['workspace']}")
@@ -763,17 +1095,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", default=".", help="目标仓库根目录")
     parser.add_argument(
         "--scope",
-        choices=("all", "docs", "tests", "worktrees"),
+        choices=("all", "docs", "tests", "worktrees", "board"),
         default="all",
-        help="采集范围：all、docs、tests、worktrees",
+        help="采集范围：all、docs、tests、worktrees；board 输出分支看板事实（不包含在 all 里）",
     )
+    parser.add_argument("--fetch", action="store_true", help="仅 board：先 git fetch --prune 拿到云端最新状态")
     parser.add_argument("--json", action="store_true", dest="as_json", help="输出结构化 JSON")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    report = run_governance_audit(Path(args.workspace), scope=args.scope)
+    report = run_governance_audit(Path(args.workspace), scope=args.scope, fetch=args.fetch)
     if args.as_json:
         print(json.dumps(report, ensure_ascii=False, indent=2))
     else:
