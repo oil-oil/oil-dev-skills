@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">oil-dev-skills：给 AI 编程 Agent 用的开发流程</title>
-  <desc id="desc">一条 Git 轨道串起五个 Skill：在主线上用 oil-explore 探索、用 oil-plan 写方案；从主线分出一个 worktree，用 oil-delegate 委托实现、用 oil-code-review 独立审查；通过合并门禁回到主线，重测试只在门禁跑一次；最后用 oil-govern 治理。探索之后还有一条修缺陷支线：用 oil-bug-fix 先找根因再修，修好后回到主线。</desc>
+  <title id="title">oil-dev-skills: A development workflow for AI coding agents</title>
+  <desc id="desc">One Git track connects six skills: explore with oil-explore and write a plan with oil-plan on main; branch into a worktree to delegate implementation with oil-delegate and run an independent review with oil-code-review; merge back to main through the merge gate where full tests run once; and govern with oil-govern. A separate bug-fix branch after explore uses oil-bug-fix to find the root cause before fixing and merging back to main.</desc>
 
   <rect width="1200" height="630" rx="28" fill="#F5F3EE"/>
 
@@ -8,8 +8,8 @@
     <text x="64" y="62" fill="#6C7380" font-size="16" font-weight="700" letter-spacing="2.4">AGENT SKILLS · DEV WORKFLOW</text>
     <rect x="64" y="80" width="52" height="5" rx="2.5" fill="#4D6BFE"/>
     <text x="61" y="154" fill="#172033" font-size="66" font-weight="760" letter-spacing="-2">oil-dev-skills</text>
-    <text x="64" y="202" fill="#3A4456" font-size="27" font-weight="500">一套给 AI 编程 Agent 用的开发流程</text>
-    <text x="64" y="238" fill="#6C7380" font-size="21">适合模块多、分支多、要长期维护的项目</text>
+    <text x="64" y="202" fill="#3A4456" font-size="25" font-weight="500">Dev workflow for AI coding agents</text>
+    <text x="64" y="236" fill="#6C7380" font-size="19">For multi-module, long-lived repositories</text>
   </g>
 
   <g id="meta" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="16" fill="#8A909A" letter-spacing="1">
@@ -48,13 +48,13 @@
 
   <g id="stage-labels" text-anchor="middle">
     <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="22" font-weight="650" fill="#172033">
-      <text x="140" y="444">探索</text>
-      <text x="320" y="444">方案</text>
-      <text x="590" y="244">委托实现</text>
-      <text x="770" y="244">独立审查</text>
-      <text x="920" y="444">合并门禁</text>
-      <text x="1084" y="444">治理</text>
-      <text x="500" y="564">修缺陷</text>
+      <text x="140" y="444">Explore</text>
+      <text x="320" y="444">Plan</text>
+      <text x="590" y="244">Delegate</text>
+      <text x="770" y="244">Code Review</text>
+      <text x="920" y="444">Merge Gate</text>
+      <text x="1084" y="444">Govern</text>
+      <text x="500" y="564">Bug Fix</text>
     </g>
     <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="18" fill="#566174">
       <text x="140" y="472">oil-explore</text>
@@ -64,6 +64,6 @@
       <text x="1084" y="472">oil-govern</text>
       <text x="500" y="592">oil-bug-fix</text>
     </g>
-    <text x="920" y="472" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="18" fill="#566174">重测试只在这里跑</text>
+    <text x="920" y="472" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif" font-size="17" fill="#566174">Full tests run once</text>
   </g>
 </svg>
