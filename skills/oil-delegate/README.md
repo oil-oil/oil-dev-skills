@@ -88,7 +88,6 @@ npx skills add oil-oil/oil-delegate
 - 需要 Python 3.10 或更高版本，以及至少一个已经安装并登录的受支持 Agent。macOS 已实测 Antigravity、Codex 和 Kimi Code 的新建与续接，以及 Antigravity、Codex 的真实写入；其他 Agent 能否直接完成任务，取决于本机登录和模型配置。Linux 和 Windows 尚未实机验证。
 - 任务内容会交给你选择的 Agent 及其模型服务，可能产生费用。不要在任务中放密钥。
 - 默认最高权限意味着 Agent 可以修改文件、执行命令，部分 Runner 还可以访问工作区外内容。静态 deny、管理锁和登录问题仍可能造成失败。重要项目请先确认修改范围，并检查结果和测试。
-- `oil-delegate` 专注于单次委托与续接；如果你需要多话题看板、主线管理和并行编排，请使用 `oil-superagent`。`oil-superagent` 不自带执行器，它通过本 Skill 的 `run --json` 接口派发任务，所以两者要一起安装。
 
 <details>
 <summary>维护、测试与排查</summary>
