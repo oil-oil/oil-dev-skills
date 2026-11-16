@@ -341,19 +341,33 @@ def _check_markdown_links(root: Path, rel_md: str) -> list[dict[str, Any]]:
     return broken
 
 
+RULE_SIZE_WARN_BYTES = 10 * 1024
+ALWAYS_LOADED_DOC_NAMES = {"agents.md", "claude.md", "gemini.md"}
+PROJECT_SKILL_PREFIXES = (".agents/skills/", ".claude/skills/", ".codex/skills/")
+
+
 def _audit_docs(root: Path, rel_files: list[str], ages: dict[str, dict[str, int | None]]) -> dict[str, Any]:
     root_mds = [p for p in rel_files if "/" not in p and p.lower().endswith(".md")]
     docs_mds = [p for p in rel_files if p.startswith("docs/") and p.lower().endswith(".md")]
+    project_skill_mds = [
+        p for p in rel_files if p.startswith(PROJECT_SKILL_PREFIXES) and p.lower().endswith(".md")
+    ]
 
     rule_files_summary: list[dict[str, Any]] = []
+    oversized_rule_files: list[str] = []
     for rel in root_mds:
         full = root / rel
         text = _read_text(full)
+        size_bytes = full.stat().st_size
+        over_budget = rel.lower() in ALWAYS_LOADED_DOC_NAMES and size_bytes > RULE_SIZE_WARN_BYTES
+        if over_budget:
+            oversized_rule_files.append(rel)
         rule_files_summary.append(
             {
                 "path": rel,
                 "lines": len(text.splitlines()),
-                "bytes": full.stat().st_size,
+                "bytes": size_bytes,
+                "over_10kb": over_budget,
                 **_doc_age_fields(rel, ages),
                 "uses_at_agents_ref": "@AGENTS.md" in text.splitlines()[:3],
             }
@@ -362,6 +376,21 @@ def _audit_docs(root: Path, rel_files: list[str], ages: dict[str, dict[str, int 
     broken_in_root: list[dict[str, Any]] = []
     for rel in root_mds:
         broken_in_root.extend(_check_markdown_links(root, rel))
+
+    broken_in_project_skills: list[dict[str, Any]] = []
+    project_skills_summary: list[dict[str, Any]] = []
+    for rel in project_skill_mds:
+        full = root / rel
+        broken_links = _check_markdown_links(root, rel)
+        broken_in_project_skills.extend(broken_links)
+        project_skills_summary.append(
+            {
+                "path": rel,
+                "lines": len(_read_text(full).splitlines()),
+                "bytes": full.stat().st_size,
+                "broken_links": len(broken_links),
+            }
+        )
 
     broken_in_docs: list[dict[str, Any]] = []
     docs_inventory: list[dict[str, Any]] = []
@@ -400,6 +429,9 @@ def _audit_docs(root: Path, rel_files: list[str], ages: dict[str, dict[str, int 
         "dev_profile_missing_keys": profile_missing,
         "dev_profile_unmatched_patterns": profile_unmatched,
         "root_markdown_files": rule_files_summary,
+        "oversized_rule_files": oversized_rule_files,
+        "project_skill_files": project_skills_summary[:25],
+        "broken_links_project_skills": broken_in_project_skills[:40],
         "docs_count": len(docs_mds),
         "broken_links_root": broken_in_root,
         "broken_links_docs": broken_in_docs[:40],
@@ -1018,9 +1050,17 @@ def _print_human(report: dict[str, Any]) -> None:
         for r in docs["root_markdown_files"]:
             kb = round(r["bytes"] / 1024, 1)
             ref_tag = " [@AGENTS.md 单源引用]" if r["uses_at_agents_ref"] else ""
-            print(f"- `{r['path']}`：{r['lines']} 行 / {kb} KB{_describe_age(r)}{ref_tag}")
+            over_tag = " [超重 >10KB：建议改为按任务路由表并将局部细则下沉]" if r.get("over_10kb") else ""
+            print(f"- `{r['path']}`：{r['lines']} 行 / {kb} KB{_describe_age(r)}{ref_tag}{over_tag}")
         for b in docs["broken_links_root"]:
             print(f"- [死链] `{b['path']}:{b['line']}` -> `{b['target']}`")
+        if docs.get("project_skill_files"):
+            skills_desc = "，".join(
+                f"`{s['path']}`（{round(s['bytes'] / 1024, 1)} KB）" for s in docs["project_skill_files"][:8]
+            )
+            print(f"- 项目内自定义 Skill 文档：{skills_desc}")
+        for b in docs.get("broken_links_project_skills", []):
+            print(f"- [项目 Skill 死链] `{b['path']}:{b['line']}` -> `{b['target']}`")
         profile = docs.get("dev_profile")
         if profile:
             missing = "、".join(DEV_PROFILE_LABELS[k] for k in docs["dev_profile_missing_keys"])

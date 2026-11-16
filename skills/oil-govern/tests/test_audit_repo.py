@@ -313,6 +313,32 @@ class AuditRepoTest(unittest.TestCase):
             self.assertEqual(old["group"], "needs_decision")
             self.assertEqual(board["main_worktree"]["uncommitted_sample"], ["a.py"])
 
+    def test_flags_oversized_agents_md_and_audits_project_skill_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _init_repo(root)
+            (root / "docs").mkdir()
+            (root / "docs" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+            (root / "AGENTS.md").write_text("# Rules\n" + ("long rule paragraph " * 600) + "\n", encoding="utf-8")
+            skill_dir = root / ".agents" / "skills" / "writer"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: writer\ndescription: demo\n---\nSee [ok](../../../docs/guide.md) and [bad](../../../docs/missing.md).\n",
+                encoding="utf-8",
+            )
+            _git(root, "add", ".")
+            _git(root, "commit", "-m", "init")
+
+            docs = audit_repo.run_governance_audit(root, scope="docs")["docs"]
+            self.assertEqual(docs["oversized_rule_files"], ["AGENTS.md"])
+            agents_entry = next(r for r in docs["root_markdown_files"] if r["path"] == "AGENTS.md")
+            self.assertTrue(agents_entry["over_10kb"])
+            self.assertEqual(len(docs["project_skill_files"]), 1)
+            self.assertEqual(
+                [b["target"] for b in docs["broken_links_project_skills"]],
+                ["../../../docs/missing.md"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
